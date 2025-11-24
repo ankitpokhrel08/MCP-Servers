@@ -1,0 +1,309 @@
+import streamlit as st
+import asyncio
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import ToolMessage, HumanMessage, AIMessage, SystemMessage
+import json
+import os
+
+# Load environment variables
+load_dotenv()
+
+# Set page configuration
+st.set_page_config(
+    page_title="MCP Multi-Server Chat",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for better UI
+st.markdown("""
+    <style>
+    .stChatMessage {
+        padding: 1rem;
+        border-radius: 0.5rem;
+    }
+    .tool-call {
+        background-color: #f0f2f6;
+        padding: 0.5rem;
+        border-radius: 0.3rem;
+        margin: 0.5rem 0;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Get the Gemini API key from .env file
+gemini_key = os.getenv("GEMINI_API_KEY")
+if gemini_key and not os.getenv("GOOGLE_API_KEY"):
+    os.environ["GOOGLE_API_KEY"] = gemini_key
+
+# Server configurations
+SERVERS = { 
+    "math": {
+        "transport": "stdio",
+        "command": "/Library/Frameworks/Python.framework/Versions/3.13/bin/uv",
+        "args": [
+            "run",
+            "fastmcp",
+            "run",
+            "/Users/ankitpokhrel/Downloads/All_projects/ML_Projects/MCP_server/math_server.py"
+       ]
+    },
+    "expense": {
+        "transport": "streamable_http",
+        "url": "https://splendid-gold-dingo.fastmcp.app/mcp"
+    },
+    "manim-server": {
+      "transport": "stdio",
+      "command": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+      "args": [
+        "/Users/ankitpokhrel/Desktop/manim-mcp-server/src/manim_server.py"
+      ],
+      "env": {
+        "MANIM_EXECUTABLE": "/Library/Frameworks/Python.framework/Versions/3.13/bin/manim"
+      }
+    },
+}
+
+# Initialize session state
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "client" not in st.session_state:
+    st.session_state.client = None
+
+if "tools" not in st.session_state:
+    st.session_state.tools = None
+
+if "named_tools" not in st.session_state:
+    st.session_state.named_tools = {}
+
+if "llm_with_tools" not in st.session_state:
+    st.session_state.llm_with_tools = None
+
+if "servers_initialized" not in st.session_state:
+    st.session_state.servers_initialized = False
+
+
+async def initialize_servers():
+    """Initialize MCP servers and tools"""
+    try:
+        # Create MCP client
+        client = MultiServerMCPClient(SERVERS)
+        
+        # Fetch available tools
+        tools = await client.get_tools()
+        
+        # Create tool name mapping
+        named_tools = {}
+        for tool in tools:
+            named_tools[tool.name] = tool
+        
+        # Initialize LLM with tools
+        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
+        llm_with_tools = llm.bind_tools(tools)
+        
+        return client, tools, named_tools, llm_with_tools
+    except Exception as e:
+        st.error(f"Error initializing servers: {str(e)}")
+        return None, None, None, None
+
+
+async def process_message(prompt: str, named_tools: dict, llm_with_tools):
+    """Process user message and get response"""
+    try:
+        # Get initial response from LLM
+        response = await llm_with_tools.ainvoke(prompt)
+        
+        # Check if there are tool calls
+        if not getattr(response, "tool_calls", None):
+            return response.content, []
+        
+        # Execute tool calls
+        tool_messages = []
+        tool_calls_info = []
+        
+        for tc in response.tool_calls:
+            selected_tool = tc["name"]
+            selected_tool_args = tc.get("args") or {}
+            selected_tool_id = tc["id"]
+            
+            # Store tool call info for display
+            tool_calls_info.append({
+                "tool": selected_tool,
+                "args": selected_tool_args
+            })
+            
+            # Execute the tool
+            result = await named_tools[selected_tool].ainvoke(selected_tool_args)
+            tool_messages.append(
+                ToolMessage(tool_call_id=selected_tool_id, content=json.dumps(result))
+            )
+        
+        # Get final response with tool results
+        final_response = await llm_with_tools.ainvoke([prompt, response, *tool_messages])
+        
+        return final_response.content, tool_calls_info
+        
+    except Exception as e:
+        return f"Error processing message: {str(e)}", []
+
+
+# Sidebar
+with st.sidebar:
+    st.title("🤖 MCP Multi-Server Chat")
+    st.markdown("---")
+    
+    # Server status section
+    st.subheader("🔌 Server Status")
+    
+    if not st.session_state.servers_initialized:
+        if st.button("🚀 Initialize Servers", use_container_width=True):
+            with st.spinner("Initializing MCP servers..."):
+                try:
+                    # Get or create event loop
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_closed():
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    
+                    # Run initialization
+                    client, tools, named_tools, llm_with_tools = loop.run_until_complete(initialize_servers())
+                    
+                    if client and tools:
+                        st.session_state.client = client
+                        st.session_state.tools = tools
+                        st.session_state.named_tools = named_tools
+                        st.session_state.llm_with_tools = llm_with_tools
+                        st.session_state.servers_initialized = True
+                        st.success("✅ Servers initialized successfully!")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to initialize servers: {str(e)}")
+    else:
+        st.success("✅ Servers Connected")
+        
+        # Display available tools
+        st.markdown("---")
+        st.subheader("🛠️ Available Tools")
+        if st.session_state.named_tools:
+            for tool_name in st.session_state.named_tools.keys():
+                st.markdown(f"• `{tool_name}`")
+        
+        # Reset button
+        st.markdown("---")
+        if st.button("🔄 Reset Servers", use_container_width=True):
+            st.session_state.servers_initialized = False
+            st.session_state.client = None
+            st.session_state.tools = None
+            st.session_state.named_tools = {}
+            st.session_state.llm_with_tools = None
+            st.rerun()
+    
+    # Clear chat button
+    st.markdown("---")
+    if st.button("🗑️ Clear Chat", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+    
+    # Example prompts
+    st.markdown("---")
+    st.subheader("💡 Example Prompts")
+    st.markdown("""
+    **Math:**
+    - Add 25 and 17
+    - Calculate 15 raised to power 3
+    
+    **Expense:**
+    - Show expense summary
+    - List all expenses
+    
+    **Manim:**
+    - Create a circle animation
+    - Animate a rotating square
+    """)
+
+# Main chat interface
+st.title("💬 MCP Multi-Server Chat")
+
+# Check if servers are initialized
+if not st.session_state.servers_initialized:
+    st.info("👈 Please initialize the servers from the sidebar to start chatting.")
+else:
+    # Display chat messages
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            
+            # Display tool calls if any
+            if "tool_calls" in message and message["tool_calls"]:
+                with st.expander("🔧 Tool Calls", expanded=False):
+                    for tool_call in message["tool_calls"]:
+                        st.markdown(f"**Tool:** `{tool_call['tool']}`")
+                        st.json(tool_call['args'])
+    
+    # Chat input
+    if prompt := st.chat_input("Ask anything... (math, expenses, animations)"):
+        # Add user message to chat
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        # Display user message
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        # Get assistant response
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                try:
+                    # Get or create event loop
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_closed():
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    
+                    # Run the async function
+                    response_content, tool_calls_info = loop.run_until_complete(
+                        process_message(
+                            prompt, 
+                            st.session_state.named_tools, 
+                            st.session_state.llm_with_tools
+                        )
+                    )
+                except Exception as e:
+                    response_content = f"Error: {str(e)}"
+                    tool_calls_info = []
+            
+            st.markdown(response_content)
+            
+            # Display tool calls if any
+            if tool_calls_info:
+                with st.expander("🔧 Tool Calls", expanded=False):
+                    for tool_call in tool_calls_info:
+                        st.markdown(f"**Tool:** `{tool_call['tool']}`")
+                        st.json(tool_call['args'])
+        
+        # Add assistant message to chat
+        st.session_state.messages.append({
+            "role": "assistant", 
+            "content": response_content,
+            "tool_calls": tool_calls_info
+        })
+
+# Footer
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: gray;'>"
+    "Powered by MCP Servers • Gemini 2.0 Flash • Streamlit"
+    "</div>", 
+    unsafe_allow_html=True
+)
