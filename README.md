@@ -11,7 +11,7 @@ This project creates a chat interface that can:
 - **Animation Creation**: Generate mathematical animations using Manim `Local through Github Cloned Repo`
 
 ## Demo
-![Demo](demo.gif)
+![Demo](demo.mp4)
 
 ### Setup Instructions
 
