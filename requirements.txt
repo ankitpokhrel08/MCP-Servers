@@ -1,0 +1,29 @@
+# Core MCP and LangChain dependencies
+fastmcp>=2.13.1
+langchain>=1.0.8
+langchain-core>=1.1.0
+langchain-google-genai>=3.2.0
+langchain-mcp-adapters>=0.1.13
+langchain-openai>=1.0.3
+mcp>=1.22.0
+
+# Web framework and UI
+streamlit>=1.51.0
+
+# Async utilities
+nest-asyncio>=1.6.0
+
+# Environment and configuration
+python-dotenv>=1.2.1
+
+# Data handling
+pandas>=2.3.3
+numpy>=2.3.5
+
+# HTTP clients
+httpx>=0.28.1
+requests>=2.32.5
+
+# Serialization and validation
+pydantic>=2.12.4
+orjson>=3.11.4

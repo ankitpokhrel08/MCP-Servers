@@ -1,11 +1,57 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.pyo
+*.pyd
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+.Python
 
 # Virtual environments
-.venv
+.venv/
+.env/
+venv/
+env/
+
+# Environment variables and secrets
 .env
+.env.local
+.env.production
+.env.staging
+*.key
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+
+# Lock files (optional - some teams include these)
+uv.lock
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# Temporary files
+temp/
+tmp/
