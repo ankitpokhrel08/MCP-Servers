@@ -10,7 +10,8 @@ This project creates a chat interface that can:
 - **Expense Management**: Track expenses, view summaries, and manage your spending `Remote`
 - **Animation Creation**: Generate mathematical animations using Manim `Local through Github Cloned Repo`
 
-All through simple conversation - just ask "add 5 and 3" or "show my expense summary" and watch the magic happen!
+## Demo
+![Demo](demo.gif)
 
 ### Setup Instructions
 
